@@ -324,6 +324,7 @@ const els = {
   resetPositionBtn: document.getElementById("resetPositionBtn"),
 
   exportSummary: document.getElementById("exportSummary"),
+  exportProgress: document.getElementById("exportProgress"),
   resetBtn: document.getElementById("resetBtn"),
 
   footerCopyright: document.getElementById("footerCopyright"),
@@ -340,6 +341,13 @@ const drag = {
 const missingDomWarnings = new Set();
 
 const debouncedSaveSettings = debounce(saveSettings, 200);
+// Preview-performance path: collapse rapid UI updates into one paint per animation frame.
+const renderQueue = {
+  scheduled: false,
+  preview: false,
+  thumbs: false,
+  controls: false,
+};
 
 // Internal regression checklist:
 // 1) Upload (picker + drag/drop), 2) thumbnail scroll/reorder/select,
@@ -362,7 +370,7 @@ function init() {
   syncControlsFromState();
   applyTheme();
   applyI18n();
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
 }
 
 function validateCriticalElements() {
@@ -451,50 +459,50 @@ function bindEvents() {
 
   addSafeListener(els.showArrows, "showArrows", "change", (e) => {
     state.carousel.showArrows = e.target.checked;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.infiniteLoop, "infiniteLoop", "change", (e) => {
     state.carousel.infinite = e.target.checked;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.activeBehavior, "activeBehavior", "change", (e) => {
     state.dots.activeBehavior = e.target.value;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.dotSize, "dotSize", "input", (e) => {
     state.dots.sizePct = Number(e.target.value);
     els.dotSizeOut.value = state.dots.sizePct.toFixed(1);
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.dotGap, "dotGap", "input", (e) => {
     state.dots.gapPct = Number(e.target.value);
     els.dotGapOut.value = state.dots.gapPct.toFixed(1);
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   bindColorPair(els.dotInactive, els.dotInactiveHex, (val) => {
     state.dots.inactiveColor = val;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
   bindColorPair(els.dotActive, els.dotActiveHex, (val) => {
     state.dots.activeColor = val;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.dotPill, "dotPill", "change", (e) => {
     state.dots.pill = e.target.checked;
-    renderAll();
+    requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
@@ -513,7 +521,7 @@ function bindEvents() {
   document.querySelectorAll(".seg").forEach((btn) => {
     btn.addEventListener("click", () => {
       setSegment(btn.dataset.segment, btn.dataset.value);
-      renderAll();
+      requestRender({ preview: true, controls: false });
       queueSaveSettings();
     });
   });
@@ -545,6 +553,8 @@ function bindEvents() {
     applyDotsPosition();
     updateThumbOverflowButtons();
   });
+
+  window.addEventListener("beforeunload", revokeAllImageUrls);
 }
 
 function addSafeListener(el, name, event, handler, options) {
@@ -560,7 +570,7 @@ function setLanguage(nextLanguage) {
   if (state.language === language) return;
   state.language = language;
   applyI18n();
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
   queueSaveSettings();
 }
 
@@ -677,6 +687,7 @@ function setSegment(group, value) {
 }
 
 async function handleFiles(fileList) {
+  console.log("[Dotten] handleFiles", fileList?.length || 0);
   if (!fileList) {
     warn("No files received by handleFiles(files).");
     return;
@@ -691,14 +702,7 @@ async function handleFiles(fileList) {
     return;
   }
 
-  let loaded = [];
-  try {
-    loaded = await Promise.all(files.map(fileToRecord));
-  } catch (error) {
-    warn(`Image read failed: ${error instanceof Error ? error.message : String(error)}`);
-    return;
-  }
-
+  const loaded = files.map(fileToRecord);
   if (!loaded.length) {
     warn("No images were loaded after processing selected files.");
     return;
@@ -713,50 +717,69 @@ async function handleFiles(fileList) {
     warn("Missing #imageInput while clearing selected file value.");
   }
 
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
 }
 
 function fileToRecord(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        id: crypto.randomUUID(),
-        file,
-        name: file.name,
-        dataUrl: String(reader.result),
-        naturalWidth: 0,
-        naturalHeight: 0,
-      });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  // Preview-performance path: keep lightweight object URLs for instant on-screen rendering.
+  return {
+    id: crypto.randomUUID(),
+    file,
+    name: file.name,
+    objectUrl: URL.createObjectURL(file),
+    naturalWidth: 0,
+    naturalHeight: 0,
+  };
 }
 
-function renderAll() {
+function requestRender(parts = {}) {
+  if (parts.preview !== false) renderQueue.preview = true;
+  if (parts.thumbs === true) renderQueue.thumbs = true;
+  if (parts.controls !== false) renderQueue.controls = true;
+
+  if (renderQueue.scheduled) return;
+  renderQueue.scheduled = true;
+  requestAnimationFrame(flushRenderQueue);
+}
+
+function flushRenderQueue() {
+  renderQueue.scheduled = false;
+
   if (!els.previewCard || !els.emptyState || !els.thumbStrip || !els.carouselTrack) {
     if (!els.previewCard) warnMissingDom("previewCard");
     if (!els.emptyState) warnMissingDom("emptyState");
     if (!els.thumbStrip) warnMissingDom("thumbStrip");
     if (!els.carouselTrack) warnMissingDom("carouselTrack");
+    renderQueue.preview = false;
+    renderQueue.thumbs = false;
+    renderQueue.controls = false;
     return;
   }
 
-  state.activeIndex = clampIndex(state.activeIndex);
+  if (renderQueue.preview) renderPreview();
+  if (renderQueue.thumbs) renderThumbs();
+  if (renderQueue.controls) renderControls();
+  if (renderQueue.thumbs) updateThumbOverflowButtons();
 
+  renderQueue.preview = false;
+  renderQueue.thumbs = false;
+  renderQueue.controls = false;
+}
+
+function renderPreview() {
+  state.activeIndex = clampIndex(state.activeIndex);
   const hasImages = state.images.length > 0;
   els.previewCard.classList.toggle("has-images", hasImages);
   els.emptyState.setAttribute("aria-hidden", String(hasImages));
-
   renderCarousel();
   renderDots();
-  renderThumbs();
   renderPreviewMeta();
-  renderExportSummary();
-
   applyDotsPosition();
-  updateThumbOverflowButtons();
+}
+
+function renderControls() {
+  const hasImages = state.images.length > 0;
+  renderExportSummary();
   els.mobileExportBar.hidden = !hasImages;
 }
 
@@ -788,14 +811,14 @@ function renderCarousel() {
       "aria-label",
       t("aria.slideOf", { current: index + 1, total: count }),
     );
-    slide.innerHTML = `<img src="${img.dataUrl}" alt="${escapeHtml(img.name)}">`;
+    slide.innerHTML = `<img src="${img.objectUrl}" alt="${escapeHtml(img.name)}">`;
     els.carouselTrack.appendChild(slide);
   });
 
   if (state.carousel.transition === "slide") {
-    els.carouselTrack.style.transform = `translateX(${-state.activeIndex * 100}%)`;
+    els.carouselTrack.style.transform = `translate3d(${-state.activeIndex * 100}%, 0, 0)`;
   } else {
-    els.carouselTrack.style.transform = "translateX(0)";
+    els.carouselTrack.style.transform = "translate3d(0, 0, 0)";
   }
 }
 
@@ -852,7 +875,7 @@ function renderThumbs() {
     thumb.draggable = true;
 
     thumb.innerHTML = `
-      <img src="${img.dataUrl}" alt="${escapeHtml(t("aria.thumbnail", { current: idx + 1 }))}">
+      <img src="${img.objectUrl}" alt="${escapeHtml(t("aria.thumbnail", { current: idx + 1 }))}">
       <div class="thumb-meta">
         <span class="thumb-name">${idx + 1}. ${escapeHtml(img.name)}</span>
         <div class="thumb-actions">
@@ -868,7 +891,7 @@ function renderThumbs() {
     thumb.addEventListener("click", (e) => {
       if (e.target.closest("button")) return;
       state.activeIndex = idx;
-      renderAll();
+      requestRender({ preview: true, controls: false });
     });
 
     removeBtn.addEventListener("click", (e) => {
@@ -1059,19 +1082,36 @@ function reorderImages(from, to) {
   else if (from > state.activeIndex && to <= state.activeIndex)
     state.activeIndex += 1;
 
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
 }
 
 function removeImage(index) {
-  state.images.splice(index, 1);
+  const [removed] = state.images.splice(index, 1);
+  if (removed?.objectUrl) URL.revokeObjectURL(removed.objectUrl);
   state.activeIndex = clampIndex(state.activeIndex);
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
   showToast("toast.imageRemoved");
+}
+
+function revokeAllImageUrls() {
+  state.images.forEach((img) => {
+    if (img?.objectUrl) URL.revokeObjectURL(img.objectUrl);
+  });
 }
 
 function onDotsDragStart(event) {
   if (state.images.length < 2) return;
-  drag.dots = { pointerId: event.pointerId, moved: false };
+  const viewport = els.carouselViewport.getBoundingClientRect();
+  const overlay = els.dotsOverlay.getBoundingClientRect();
+  drag.dots = {
+    pointerId: event.pointerId,
+    moved: false,
+    viewport,
+    halfW: (overlay.width / 2 / viewport.width) * 100,
+    halfH: (overlay.height / 2 / viewport.height) * 100,
+    xPct: state.dots.xPct,
+    yPct: state.dots.yPct,
+  };
   try {
     els.dotsOverlay.setPointerCapture(event.pointerId);
   } catch {
@@ -1087,27 +1127,20 @@ function onDotsDragMove(event) {
   event.preventDefault();
   d.moved = true;
 
-  const viewport = els.carouselViewport.getBoundingClientRect();
-  const overlay = els.dotsOverlay.getBoundingClientRect();
+  let xPct = ((event.clientX - d.viewport.left) / d.viewport.width) * 100;
+  let yPct = ((event.clientY - d.viewport.top) / d.viewport.height) * 100;
 
-  const halfW = (overlay.width / 2 / viewport.width) * 100;
-  const halfH = (overlay.height / 2 / viewport.height) * 100;
-
-  let xPct = ((event.clientX - viewport.left) / viewport.width) * 100;
-  let yPct = ((event.clientY - viewport.top) / viewport.height) * 100;
-
-  xPct = clamp(xPct, halfW, 100 - halfW);
-  yPct = clamp(yPct, halfH, 100 - halfH);
+  xPct = clamp(xPct, d.halfW, 100 - d.halfW);
+  yPct = clamp(yPct, d.halfH, 100 - d.halfH);
 
   if (state.dots.snap) {
     xPct = snapValue(xPct, [5, 50, 95], 2.6);
     yPct = snapValue(yPct, [8, 50, 92], 2.6);
   }
 
-  state.dots.xPct = roundTwo(xPct);
-  state.dots.yPct = roundTwo(yPct);
-  applyDotsPosition();
-  queueSaveSettings();
+  d.xPct = roundTwo(xPct);
+  d.yPct = roundTwo(yPct);
+  applyDotsPosition(d.xPct, d.yPct);
 }
 
 function onDotsDragEnd(event) {
@@ -1119,14 +1152,18 @@ function onDotsDragEnd(event) {
     // Ignore when pointer was already released.
   }
   els.snapGuides.classList.remove("visible");
+  state.dots.xPct = d.xPct;
+  state.dots.yPct = d.yPct;
+  queueSaveSettings();
+  requestRender({ preview: true, controls: false });
   setTimeout(() => {
     drag.dots = null;
   }, 0);
 }
 
-function applyDotsPosition() {
-  els.dotsOverlay.style.left = `${state.dots.xPct}%`;
-  els.dotsOverlay.style.top = `${state.dots.yPct}%`;
+function applyDotsPosition(xPct = state.dots.xPct, yPct = state.dots.yPct) {
+  els.dotsOverlay.style.left = `${xPct}%`;
+  els.dotsOverlay.style.top = `${yPct}%`;
 }
 
 function onSwipeStart(event) {
@@ -1170,7 +1207,7 @@ function onSwipeMove(event) {
       -state.activeIndex * 100 +
       (s.dx / els.carouselViewport.clientWidth) * 100;
     els.carouselTrack.style.transition = "none";
-    els.carouselTrack.style.transform = `translateX(${shift}%)`;
+    els.carouselTrack.style.transform = `translate3d(${shift}%, 0, 0)`;
   }
 }
 
@@ -1199,7 +1236,7 @@ function goToSlide(nextIndex) {
   if (state.carousel.infinite) state.activeIndex = (nextIndex + len) % len;
   else state.activeIndex = clamp(nextIndex, 0, len - 1);
 
-  renderAll();
+  requestRender({ preview: true, controls: false });
 }
 
 function renderExportSummary() {
@@ -1285,7 +1322,15 @@ function setExportBusy(busy, text = "") {
 
   if (busy && text) {
     els.exportSummary.textContent = text;
+    if (els.exportProgress) {
+      els.exportProgress.hidden = false;
+      els.exportProgress.textContent = text;
+    }
   } else {
+    if (els.exportProgress) {
+      els.exportProgress.hidden = true;
+      els.exportProgress.textContent = "";
+    }
     renderExportSummary();
   }
 }
@@ -1294,7 +1339,8 @@ async function renderSlideToBlob(index, format = "png") {
   const item = state.images[index];
   if (!item) throw new Error("Image not found");
 
-  const img = await loadImage(item.dataUrl);
+  // Export-quality path: render at native pixel dimensions on an offscreen/native canvas.
+  const img = await loadImage(item.objectUrl);
   const w = img.naturalWidth;
   const h = img.naturalHeight;
 
@@ -1503,6 +1549,7 @@ function resetAll() {
   const keepTheme = state.theme;
 
   const defaults = createDefaultState(keepLanguage);
+  revokeAllImageUrls();
   state.images = [];
   state.activeIndex = 0;
   state.exportFormat = defaults.exportFormat;
@@ -1515,7 +1562,7 @@ function resetAll() {
   syncControlsFromState();
   applyTheme();
   applyI18n();
-  renderAll();
+  requestRender({ preview: true, thumbs: true, controls: true });
   queueSaveSettings();
   showToast("toast.resetDone");
 }
