@@ -48,41 +48,50 @@ button, input, select { font: inherit; color: inherit; }
   overflow: hidden;
 }
 
-.appbar {
+.app-header {
   position: sticky;
   top: 0;
   z-index: 30;
   display: flex;
-  justify-content: space-evenly;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
-  padding: 12px 14px;
+  padding: 14px 18px;
 }
 
-.brand-wrap {
-  display: grid;
-  gap: 2px;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.appbar h1 {
-  margin: 0;
-  font-size: 1.12rem;
-  letter-spacing: 0.01em;
+.brand-logo {
+  height: 60px;
+  width: auto;
+  display: block;
 }
 
-.app-subtitle {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--muted);
+:root[data-theme="dark"] .brand-logo,
+body[data-theme="dark"] .brand-logo {
+  filter: invert(1);
 }
 
-.appbar-controls {
+.brand-name {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  line-height: 1;
+}
+
+.header-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+  margin-left: auto;
 }
 
 .segmented-toggle {
@@ -642,11 +651,12 @@ select:focus-visible,
   outline-offset: 2px;
 }
 
-@media (max-width: 720px) {
-  .app-subtitle { display: none; }
+@media (max-width: 640px) {
+  .brand-logo { height: 46px; }
+  .brand-name { font-size: 1.1rem; }
 
-  .appbar {
-    padding: 10px 10px;
+  .app-header {
+    padding: 10px 12px;
   }
 
   .site-footer {
