@@ -214,19 +214,17 @@ body[data-theme="dark"] .sun { opacity: 0.35; }
 
 .dots-overlay {
   position: absolute;
-  left: 50%;
-  top: 88%;
-  transform: translate(-50%, -50%);
+  left: 0;
+  top: 0;
+  transform: translate3d(0, 0, 0);
   z-index: 6;
   touch-action: none;
 }
 
-.drag-hint {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
-  text-align: center;
-  user-select: none;
+.dots-row {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .dots-container {

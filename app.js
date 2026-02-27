@@ -25,7 +25,6 @@ const I18N = {
     preview: {
       title: "Preview",
       empty: "Add images to start designing.",
-      dragDots: "Drag dots",
       noImages: "No images yet",
       metaCount: "{current} / {total} images",
     },
@@ -130,7 +129,6 @@ const I18N = {
     preview: {
       title: "Ko'rinish",
       empty: "Dizaynni boshlash uchun rasmlar qo'shing.",
-      dragDots: "Nuqtalarni sudrang",
       noImages: "Hali rasm yo'q",
       metaCount: "{current} / {total} rasm",
     },
@@ -1364,12 +1362,24 @@ function onDotsDragStart(event) {
   const viewport = els.carouselViewport.getBoundingClientRect();
   const imageRect = getCurrentRenderedImageRect();
   if (!imageRect) return;
+  const rowMetrics = getDotsRowMetrics();
+  const currentCenter = getAnchoredCenterFromPct(
+    state.dots.xPct,
+    state.dots.yPct,
+    imageRect,
+    rowMetrics.halfW,
+    rowMetrics.halfH,
+  );
 
   drag.dots = {
     pointerId: event.pointerId,
     moved: false,
     viewport,
     imageRect,
+    rowHalfW: rowMetrics.halfW,
+    rowHalfH: rowMetrics.halfH,
+    offsetX: event.clientX - (viewport.left + currentCenter.x),
+    offsetY: event.clientY - (viewport.top + currentCenter.y),
     xPct: state.dots.xPct,
     yPct: state.dots.yPct,
   };
@@ -1388,18 +1398,30 @@ function onDotsDragMove(event) {
   event.preventDefault();
   d.moved = true;
 
-  const localX = event.clientX - d.viewport.left;
-  const localY = event.clientY - d.viewport.top;
-  let xPct = (localX - d.imageRect.x) / d.imageRect.w;
-  let yPct = (localY - d.imageRect.y) / d.imageRect.h;
+  let centerX = event.clientX - d.offsetX - d.viewport.left;
+  let centerY = event.clientY - d.offsetY - d.viewport.top;
 
-  xPct = clamp(xPct, 0, 1);
-  yPct = clamp(yPct, 0, 1);
+  centerX = clampCenterAxis(
+    centerX,
+    d.imageRect.x + d.rowHalfW,
+    d.imageRect.x + d.imageRect.w - d.rowHalfW,
+  );
+  centerY = clampCenterAxis(
+    centerY,
+    d.imageRect.y + d.rowHalfH,
+    d.imageRect.y + d.imageRect.h - d.rowHalfH,
+  );
+
+  let xPct = (centerX - d.imageRect.x) / d.imageRect.w;
+  let yPct = (centerY - d.imageRect.y) / d.imageRect.h;
 
   if (state.dots.snap) {
     xPct = snapValue(xPct, [0.05, 0.5, 0.95], 0.026);
     yPct = snapValue(yPct, [0.08, 0.5, 0.92], 0.026);
   }
+
+  xPct = clamp(xPct, 0, 1);
+  yPct = clamp(yPct, 0, 1);
 
   d.xPct = roundFour(xPct);
   d.yPct = roundFour(yPct);
@@ -1427,10 +1449,55 @@ function onDotsDragEnd(event) {
 function applyDotsPosition(xPct = state.dots.xPct, yPct = state.dots.yPct) {
   const rect = getCurrentRenderedImageRect();
   if (!rect) return;
-  const x = rect.x + xPct * rect.w;
-  const y = rect.y + yPct * rect.h;
-  els.dotsOverlay.style.left = `${x}px`;
-  els.dotsOverlay.style.top = `${y}px`;
+  const rowMetrics = getDotsRowMetrics();
+  const center = getAnchoredCenterFromPct(
+    xPct,
+    yPct,
+    rect,
+    rowMetrics.halfW,
+    rowMetrics.halfH,
+  );
+
+  const overlayLeft = center.x - rowMetrics.halfW;
+  const overlayTop = center.y - rowMetrics.halfH;
+  els.dotsOverlay.style.left = `${overlayLeft}px`;
+  els.dotsOverlay.style.top = `${overlayTop}px`;
+}
+
+function getDotsRowMetrics() {
+  if (!els.dotsContainer) return { width: 0, height: 0, halfW: 0, halfH: 0 };
+  const box = els.dotsContainer.getBoundingClientRect();
+  const width = box.width || 0;
+  const height = box.height || 0;
+  return {
+    width,
+    height,
+    halfW: width / 2,
+    halfH: height / 2,
+  };
+}
+
+function getAnchoredCenterFromPct(xPct, yPct, imageRect, halfW, halfH) {
+  let centerX = imageRect.x + xPct * imageRect.w;
+  let centerY = imageRect.y + yPct * imageRect.h;
+
+  centerX = clampCenterAxis(
+    centerX,
+    imageRect.x + halfW,
+    imageRect.x + imageRect.w - halfW,
+  );
+  centerY = clampCenterAxis(
+    centerY,
+    imageRect.y + halfH,
+    imageRect.y + imageRect.h - halfH,
+  );
+
+  return { x: centerX, y: centerY };
+}
+
+function clampCenterAxis(value, minValue, maxValue) {
+  if (maxValue < minValue) return (minValue + maxValue) / 2;
+  return clamp(value, minValue, maxValue);
 }
 
 function onSwipeStart(event) {
