@@ -1,262 +1,246 @@
 ## 1) Project Overview
 
-Dotten is a client-side image stylization tool that overlays configurable halftone-style dots on uploaded images and exports the result.
+Dotten is a static, client-side web app for styling carousel pagination dots on uploaded images and exporting final images with dots baked in.
 
-### What Dotten does
+### What it does
 
-- Accepts one or multiple image uploads (picker or drag/drop).
-- Shows an interactive preview with per-image navigation/reorder.
-- Lets users adjust dot settings (size, spacing, opacity, color, blend mode, position).
-- Exports:
-  - Single image as PNG.
-  - Multiple images as ZIP of PNG files.
-
-### Core features
-
-- Multi-image workflow with thumbnail strip and active preview.
-- Drag-and-drop + file picker upload.
-- Reordering thumbnails (desktop and touch/mobile).
-- Bilingual UI (EN/UZ) with persistent language selection.
-- Light/dark theme with persistent preference.
-- Full-quality export pipeline separate from fast preview pipeline.
+- Upload one or more images (file picker or drag/drop).
+- Preview images in a carousel with interactive dot overlay controls.
+- Reorder images via thumbnail strip (desktop + mobile).
+- Export:
+  - 1 image: PNG download.
+  - Multiple images: ZIP containing PNG files.
 
 ### Design philosophy
 
-- Vanilla HTML/CSS/JS only (no framework).
-- Mobile-first, touch-friendly interaction.
-- Fast, responsive preview interactions.
-- Export quality prioritized at native image resolution.
-- Minimal dependencies and no build step.
+- Vanilla HTML/CSS/JS (no framework, no bundler).
+- Fast interaction in preview.
+- Full-quality export at native image resolution.
+- Mobile-first interaction support.
 
 ---
 
-## 2) Tech Stack
+## 2) Rename / History Notes (dotten → Dotten)
 
-- **UI**: HTML + CSS + Vanilla JavaScript
-- **Rendering**:
-  - Preview: DOM/CSS + lightweight overlay logic
-  - Export: Canvas 2D (`<canvas>` in JS at native image size)
-- **Archive download**: JSZip (implemented directly in `app.js`)
-- **Persistence**: `localStorage`
-- **Deployment**: GitHub Pages via GitHub Actions
-- **Tooling**: No bundler, no transpiler, no build pipeline
+The project was renamed from **dotten** to **Dotten**.
+
+Current state:
+
+- Product/UI name is Dotten.
+- Persistence key is now `dotten:v2` (legacy keys still read).
+- Some legacy naming is intentionally retained in export filenames for compatibility:
+  - ZIP filename constant: `ruhiddin.github.io-dotten.zip`
+  - Single PNG filename: `dotten-01.png`
+
+Do not change filename rules unless explicitly requested.
 
 ---
 
-## 3) Architecture Overview
+## 3) Tech Stack
 
-Dotten is organized around a single app state and targeted render functions.
+- HTML5
+- CSS3
+- Vanilla JavaScript
+- Canvas 2D API for export rendering
+- In-file JSZip implementation (custom class in `app.js`)
+- GitHub Pages + GitHub Actions for deployment
 
-### State object
+No build tools, no transpilation, no package manager required for runtime.
 
-State includes:
+---
 
-- `images`: ordered array of uploaded image records (`id`, `name`, `objectUrl`, etc.)
-- `activeIndex`: current previewed image
-- `settings`: dot/render settings (size, spacing, opacity, blend mode, color, position)
-- `theme`: `"light"` or `"dark"`
+## 4) Current Feature Set (Accurate to Code)
+
+- EN/UZ language switcher uses **segmented buttons** (`EN`, `UZ`) in header (not a dropdown).
+- Theme toggle works and persists.
+- Header branding:
+  - `assets/dotten-logo.png` shown in header.
+  - Logo inverts in dark theme via CSS filter.
+- Favicon:
+  - `assets/dotten-logo.svg` via relative paths in `<head>`.
+- Upload pipeline:
+  - Picker and drag/drop both feed `handleFiles(...)`.
+  - Filters `image/*`, creates object URLs, updates state, renders.
+- Thumbnail strip:
+  - Desktop reorder via HTML5 DnD (handle-gated).
+  - Mobile reorder via Pointer Events:
+    - drag handle immediate start
+    - long-press start (`220ms`)
+    - movement cancel threshold (`8px`)
+    - auto-scroll near edges
+- Dot overlay:
+  - No drag hint text in overlay.
+  - Anchor is center-based.
+  - Mapping uses rendered image rect (contain/cover aware).
+  - Edge clamping uses **dot radius** (thin margin), not row width.
+- Export behavior:
+  - Single image => PNG
+  - Multiple images => ZIP (PNG entries only)
+- Footer:
+  - Dynamic current year copyright line
+  - “Made with heart by BITHERD”
+  - Instagram/Telegram links: `@bit_herd`
+- Persistence:
+  - Settings/theme/language persisted
+  - Uploaded images are **not** persisted
+
+---
+
+## 5) Architecture Overview
+
+Dotten is state-driven with batched rendering.
+
+### Core state (`app.js`)
+
+`state` includes:
+
 - `language`: `"en"` or `"uz"`
-- UI/runtime flags for drag/export status
-
-Not persisted:
-
-- Raw file binaries
-- Rendered canvases/blobs
-- Transient drag pointers/bounds
-- Temporary progress internals
+- `theme`: `"light"` or `"dark"`
+- `images`: ordered records `{ id, file, name, objectUrl, naturalWidth, naturalHeight }`
+- `activeIndex`
+- `exportFormat` (UI state only; export implementation still writes PNG)
+- `carousel`:
+  - `showArrows`, `infinite`, `transition` (`slide|fade`), `fit` (`contain|cover`)
+- `dots`:
+  - `style`, `activeBehavior`, colors, `pill`, `snap`
+  - canonical geometry:
+    - `xPct`, `yPct` in normalized `[0..1]`
+    - `sizePct`, `gapPct` as ratio of min image dimension
 
 ### Persistence
 
-- Versioned storage key: `dotten:v1`
-- Settings/language/theme are restored from localStorage.
-- Defaults are merged to protect against missing/old fields.
+- Active key: `dotten:v2`
+- Legacy read keys: `dotten:v1`, `dotten:v1`
+- Schema: `version: 2`
+- `mergeSettings(...)` validates and migrates legacy values.
 
-### i18n structure
+### Render scheduler
 
-- `I18N` dictionary object keyed by language and string key.
-- `t(key)` resolves current language string with fallback.
-- `applyI18n()` updates text nodes via `data-i18n` / `data-i18n-attr`.
-- Avoids destructive container replacement (`innerHTML`) for interactive controls.
-
-### Theme system
-
-- Theme state applied via `data-theme` on root element.
-- CSS variables define semantic colors and are swapped by theme.
-- Toggle updates state + persists preference.
-
-### Rendering strategy
-
-- `requestAnimationFrame` scheduler batches render requests.
-- Render split by responsibility:
+- `requestRender(parts)` batches updates via `requestAnimationFrame`
+- `flushRenderQueue()` calls:
   - `renderPreview()`
   - `renderThumbs()`
   - `renderControls()`
-- Avoids full DOM rebuild for unrelated changes.
-
-### ASCII architecture diagram
-
-```text
-User Input (upload / sliders / drag / theme / lang)
-                |
-                v
-         State Update Functions
-                |
-                v
-          requestRender(parts)
-                |
-        requestAnimationFrame
-                |
-                v
-   +------------+------------+
-   |                         |
-renderPreview()         renderThumbs()/renderControls()
-   |                         |
-Fast DOM/CSS preview     Targeted UI updates
-                |
-                v
-         Export Action Trigger
-                |
-                v
- Full-res offscreen Canvas 2D render
-                |
-                v
-     PNG download / ZIP download
-```
 
 ---
 
-## 4) Core Rendering Pipeline
+## 6) Preview vs Export Rendering Model
 
-### Upload flow
+Preview and export intentionally use different execution paths but shared geometry model.
 
-1. User selects files or drops files.
-2. `handleFiles(files)` converts `FileList` -> array.
-3. Filters to `image/*`.
-4. Creates per-file record with `URL.createObjectURL(file)`.
-5. Pushes records to `state.images`.
-6. Sets `activeIndex` if needed.
-7. Calls render scheduler.
+### Preview path (fast)
 
-### State update
+- Uses DOM + object URLs.
+- Computes displayed image rect via:
+  - `getRenderedImageRect(containerW, containerH, imgNaturalW, imgNaturalH, fitMode)`
+- Dot center in preview:
+  - `centerX = rect.x + xPct * rect.w`
+  - `centerY = rect.y + yPct * rect.h`
+- Dot diameter/gap in preview:
+  - `dotD = sizePct * min(rect.w, rect.h)`
+  - `gap = gapPct * min(rect.w, rect.h)`
+- Clamping uses dot radius:
+  - center constrained to image rect with `dotRadius = dotD / 2`
 
-- All interactions update `state` through controlled handlers.
-- Rendering is requested after mutation, not inline-heavy processing per event.
+### Export path (full quality)
 
-### `renderAll()` behavior (via scheduled parts)
-
-- Hide empty overlay when `images.length > 0`.
-- Show active preview image.
-- Render/update thumbnail strip.
-- Update control labels/toggles.
-- Enable/disable export buttons as appropriate.
-
-### `renderPreview()`
-
-- Shows current image using cached object URL.
-- Applies dot overlay position/settings for interactive preview.
-- Keeps operations lightweight (no full native-resolution canvas pass here).
-
-### `renderThumbs()`
-
-- Updates strip only when image list/order changes.
-- Maintains active state and interaction hooks.
-
-### Export flow
-
-1. User clicks export.
-2. For each image, load source and render to offscreen/full-size canvas using natural dimensions.
-3. Bake dot layer into final pixels.
-4. Output PNG blob(s).
-5. Single => direct PNG download.
-6. Multiple => ZIP archive download (PNG files inside).
-
-### Why preview/export are separated
-
-- Preview prioritizes interaction speed.
-- Export prioritizes final output fidelity.
-- Mixing both would cause UI lag and unnecessary CPU/memory use during editing.
+- Uses native-size canvas (`naturalWidth`/`naturalHeight`).
+- Draws original image at full native size.
+- Dot geometry mirrors preview model in native pixels:
+  - `dotD = sizePct * min(nativeW, nativeH)`
+  - `gap = gapPct * min(nativeW, nativeH)`
+  - center from `xPct/yPct`, clamped by native dot radius
+- Multiple-image export always produces PNG files in ZIP.
 
 ---
 
-## 5) Performance Strategy
+## 7) Dot Geometry + Dragging Details (Important)
 
-### No full-res preview rendering
+### Canonical dot model
 
-- Full native-resolution render is export-only.
-- Preview uses display-sized elements and object URLs.
+- `xPct`, `yPct` are normalized ratios (`0..1`) relative to rendered image rect.
+- `sizePct`, `gapPct` are normalized ratios of min image dimension.
 
-### RAF batching
+### Drag mapping
 
-- `requestRender()` coalesces rapid updates into one frame.
-- Slider drags and repeated UI events avoid redundant render calls.
+- On dots drag start, pointer offset is stored relative to anchor center.
+- On move:
+  - center derived from pointer minus offset
+  - converted back to normalized `xPct/yPct` relative to rendered image rect
+  - clamped by dot radius bounds
+  - optional snap guides applied in normalized space
 
-### Drag optimization
+### Why this matters
 
-- Cache bounds on pointerdown.
-- During pointermove, update only visual transform/position.
-- Commit to state once on pointerup.
-
-### Debounced persistence
-
-- Persist settings/theme/language with debounce to avoid write spam.
-
-### DOM safety/perf
-
-- Avoid large `innerHTML` rewrites for app containers.
-- Update only needed nodes and text bindings.
-- Rebuild thumbnails only when image/order changes.
+This is what keeps preview and export aligned, including near-edge positioning and contain/cover fit behavior.
 
 ---
 
-## 6) i18n System
+## 8) i18n System
 
-### Where translations live
+- Translations live in `I18N` object (`app.js`) for `en` and `uz`.
+- `t(key, vars)` resolves translated strings.
+- `applyI18n()` updates:
+  - `textContent` for `[data-i18n]`
+  - mapped attributes for `[data-i18n-attr]`
+- i18n updates are non-destructive (no container `innerHTML` replacement for core controls).
 
-- `I18N` dictionary in `app.js`, keyed by language and message key.
+Language UI:
 
-### How text binding works
-
-- UI nodes use `data-i18n="key"` for text.
-- Optional `data-i18n-attr="aria-label:key"` style mapping for attributes.
-- `applyI18n()` applies `textContent`/attribute updates only.
-
-### Add a new language
-
-1. Add new language object in `I18N` with complete key coverage.
-2. Extend language toggle UI/state options.
-3. Ensure `setLanguage()` accepts new code.
-4. Verify all `data-i18n` keys resolve.
-
-### Language persistence
-
-- Current language saved in `dotten:v1`.
-- Restored on init, then `applyI18n()` runs.
+- Segmented buttons in header:
+  - `#langEnBtn`, `#langUzBtn`
+- `setLanguage(...)` updates state, i18n, and persistence.
 
 ---
 
-## 7) Theme System
+## 9) Theme System
 
-### Toggle logic
-
-- User toggles theme control.
-- `setTheme()`/`toggleTheme()` updates state and root `data-theme`.
-- Preference is saved in localStorage.
-
-### CSS variable structure
-
-- Semantic variables (`--bg`, `--text`, `--surface`, etc.).
-- Theme-specific variable values under `[data-theme="light"]` / `[data-theme="dark"]`.
-
-### Extending themes
-
-1. Add new theme token block in CSS.
-2. Update theme state validation.
-3. Expose control in UI.
-4. Keep semantic variable names stable to avoid component-level rewrites.
+- Theme toggle button: `#themeToggle`
+- Theme applied to both:
+  - `document.documentElement[data-theme=...]`
+  - `body[data-theme=...]`
+- Early theme application before init:
+  - `applyInitialTheme()` + `readStoredThemeEarly()`
+- Header logo in dark mode:
+  - CSS inversion filter on `.brand-logo` under dark theme.
 
 ---
 
-## 8) File Structure
+## 10) Upload, Reorder, Export Workflows
+
+### Upload
+
+- Input: `#imageInput`
+- Drop zone: `#dropZone`
+- `handleFiles(fileList)`:
+  - array conversion + `image/*` filter
+  - `fileToRecord(...)` + `URL.createObjectURL(...)`
+  - appends to `state.images`
+  - schedules render
+
+### Reorder
+
+- Thumbnails container: `#thumbStrip`
+- Desktop:
+  - HTML5 DnD with handle gating
+- Mobile:
+  - Pointer events with:
+    - handle immediate drag
+    - long-press fallback
+    - auto-scroll strip while dragging
+  - final order synced by image IDs
+
+### Export
+
+- `exportAction()` routes:
+  - `exportSinglePng()` for one image
+  - `exportZip()` for multiple
+- ZIP generation uses in-file JSZip class.
+- ZIP filename from `buildZipFilename()` => `ZIP_BASE_NAME`.
+
+---
+
+## 11) File Structure
 
 ```text
 dotten/
@@ -264,71 +248,68 @@ dotten/
 ├── styles.css
 ├── app.js
 ├── DEVELOPMENT.md
+├── assets/
+│   ├── dotten-logo.png
+│   └── dotten-logo.svg
 └── .github/
     └── workflows/
         └── pages.yml
 ```
 
-### Responsibilities
+### File responsibilities
 
-- `index.html`: App structure, controls, upload zone, preview area, thumbnail strip, footer, script/style includes.
-- `styles.css`: Layout, responsive behavior, theme tokens, component styling, transitions.
-- `app.js`: State, event wiring, i18n, theme, upload handling, rendering scheduler, drag/reorder logic, export pipeline, persistence.
-- `.github/workflows/pages.yml`: GitHub Pages deployment workflow.
+- `index.html`: static structure, controls, accessibility attributes, footer links.
+- `styles.css`: theme variables, responsive layout, header branding, interaction visuals.
+- `app.js`: state, persistence, i18n, event wiring, render scheduler, drag/reorder, export pipeline.
+- `assets/*`: branding assets (header logo + favicon).
+- `.github/workflows/pages.yml`: deploy pipeline to GitHub Pages.
 
 ---
 
-## 9) Deployment (GitHub Pages)
+## 12) Deployment (GitHub Pages)
 
-### Workflow file
+Workflow file: `.github/workflows/pages.yml`
 
-- Deployment is defined in `.github/workflows/pages.yml`.
+Current behavior:
 
-### Required repository setting
+- Trigger: push to `main` (and manual dispatch).
+- Publishes repository root (`path: .`) as static artifact.
+- Deploy action: `actions/deploy-pages@v4`.
 
-- In GitHub repo: **Settings → Pages**
+Required repo setting:
+
+- **Settings → Pages → Build and deployment**
 - Source must be **GitHub Actions**.
 
-### Deployment behavior
+---
 
-- On push to `main`, workflow builds/deploys static files to Pages environment.
-- No build artifacts are required since project is static.
+## 13) Local Development / Testing
 
-### Local testing
-
-- Open `index.html` directly in browser for basic checks.
-- For stricter browser behavior, optionally use a local static server (not required by project).
+- No build step required.
+- Open `index.html` directly for quick smoke testing.
+- Recommended manual checks:
+  - upload via picker and drag/drop
+  - language/theme persistence after reload
+  - mobile reorder (handle + long-press)
+  - near-edge dot placement and export match
+  - single PNG and multi ZIP export
 
 ---
 
-## 10) How to Add New Features Safely
-
-- Do not rebuild large DOM sections unless necessary.
-- Preserve preview/export separation:
-  - Preview remains lightweight.
-  - Export remains native-resolution canvas.
-- Update state through controlled setters/handlers, then request render.
-- Add all new user-facing strings to `I18N` and bind via `data-i18n`.
-- Avoid `innerHTML` replacement on interactive containers.
-- When changing persistence:
-  - Maintain backward-safe defaults merge.
-  - Bump/handle schema version intentionally.
-- Verify both mouse and touch behavior for drag/reorder features.
-
----
-
-## 11) Known Constraints / Limitations
+## 14) Known Constraints
 
 - Large images can increase memory/CPU usage during export.
-- Output format is PNG-only (lossless, larger file sizes than JPEG).
-- No backend: all processing is client-side in-browser.
-- Uploaded image binaries are not persisted in localStorage (session-only object URLs/state).
+- No backend; all processing is in-browser.
+- Images are session-only (not stored in localStorage).
+- Export format selection UI includes JPEG option, but current export implementation produces PNG output (single PNG, multi PNG-in-ZIP).
 
 ---
 
-## 12) Roadmap Ideas (Optional)
+## 15) Safe Change Guidelines
 
-- Presets system for reusable dot style profiles.
-- Per-image dot position/settings override.
-- Animation export sequence support.
-- PWA mode for installable offline experience.
+- Preserve preview/export separation.
+- Keep dot geometry canonical (`xPct/yPct/sizePct/gapPct` normalized).
+- Any persistence schema change must bump version and include migration logic.
+- Avoid destructive DOM rewrites for interactive sections.
+- For reorder behavior, validate both desktop DnD and mobile pointer flow.
+- If changing export naming or format behavior, treat as a compatibility-impacting change and document clearly.

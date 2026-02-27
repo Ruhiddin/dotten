@@ -1,7 +1,7 @@
 const STORAGE_KEY = "dotten:v2";
-const LEGACY_STORAGE_KEYS = ["dotten:v1", "dotfolio:v1"];
+const LEGACY_STORAGE_KEYS = ["dotten:v1", "dotten:v1"];
 const STORAGE_SCHEMA = 2;
-const ZIP_BASE_NAME = "dotfolio-ruhiddin.github.io-dotfolio.zip";
+const ZIP_BASE_NAME = "ruhiddin.github.io-dotten.zip";
 const DOT_SIZE_MIN = 0.006;
 const DOT_SIZE_MAX = 0.04;
 const DOT_GAP_MIN = 0.002;
@@ -237,7 +237,8 @@ function readStoredThemeEarly() {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const saved = JSON.parse(raw);
-      if (saved?.theme === "light" || saved?.theme === "dark") return saved.theme;
+      if (saved?.theme === "light" || saved?.theme === "dark")
+        return saved.theme;
     }
   } catch {
     // Ignore blocked storage / parse errors.
@@ -459,12 +460,22 @@ function bindEvents() {
     }
   });
 
-  addSafeListener(els.carouselViewport, "carouselViewport", "pointerdown", onSwipeStart);
+  addSafeListener(
+    els.carouselViewport,
+    "carouselViewport",
+    "pointerdown",
+    onSwipeStart,
+  );
   window.addEventListener("pointermove", onSwipeMove, { passive: false });
   window.addEventListener("pointerup", onSwipeEnd);
   window.addEventListener("pointercancel", onSwipeEnd);
 
-  addSafeListener(els.dotsOverlay, "dotsOverlay", "pointerdown", onDotsDragStart);
+  addSafeListener(
+    els.dotsOverlay,
+    "dotsOverlay",
+    "pointerdown",
+    onDotsDragStart,
+  );
   window.addEventListener("pointermove", onDotsDragMove, { passive: false });
   window.addEventListener("pointerup", onDotsDragEnd);
   window.addEventListener("pointercancel", onDotsDragEnd);
@@ -488,14 +499,22 @@ function bindEvents() {
   });
 
   addSafeListener(els.dotSize, "dotSize", "input", (e) => {
-    state.dots.sizePct = clamp(Number(e.target.value) / 100, DOT_SIZE_MIN, DOT_SIZE_MAX);
+    state.dots.sizePct = clamp(
+      Number(e.target.value) / 100,
+      DOT_SIZE_MIN,
+      DOT_SIZE_MAX,
+    );
     els.dotSizeOut.value = (state.dots.sizePct * 100).toFixed(1);
     requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.dotGap, "dotGap", "input", (e) => {
-    state.dots.gapPct = clamp(Number(e.target.value) / 100, DOT_GAP_MIN, DOT_GAP_MAX);
+    state.dots.gapPct = clamp(
+      Number(e.target.value) / 100,
+      DOT_GAP_MIN,
+      DOT_GAP_MAX,
+    );
     els.dotGapOut.value = (state.dots.gapPct * 100).toFixed(1);
     requestRender({ preview: true, controls: false });
     queueSaveSettings();
@@ -538,8 +557,9 @@ function bindEvents() {
     });
   });
 
-  [els.exportBtn, els.exportBtnPanel, els.exportBtnMobile].forEach((btn, index) =>
-    addSafeListener(btn, `exportBtn${index}`, "click", exportAction),
+  [els.exportBtn, els.exportBtnPanel, els.exportBtnMobile].forEach(
+    (btn, index) =>
+      addSafeListener(btn, `exportBtn${index}`, "click", exportAction),
   );
 
   addSafeListener(els.resetBtn, "resetBtn", "click", resetAll);
@@ -551,15 +571,24 @@ function bindEvents() {
     els.thumbStrip.scrollBy({ left: 240, behavior: "smooth" });
   });
 
-  addSafeListener(els.thumbStrip, "thumbStrip", "scroll", updateThumbOverflowButtons);
-  addSafeListener(els.thumbStrip, "thumbStrip", "wheel",
+  addSafeListener(
+    els.thumbStrip,
+    "thumbStrip",
+    "scroll",
+    updateThumbOverflowButtons,
+  );
+  addSafeListener(
+    els.thumbStrip,
+    "thumbStrip",
+    "wheel",
     (e) => {
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         els.thumbStrip.scrollLeft += e.deltaY;
       }
     },
-    { passive: false });
+    { passive: false },
+  );
 
   window.addEventListener("resize", () => {
     applyDotsPosition();
@@ -706,7 +735,8 @@ async function handleFiles(fileList) {
   }
 
   const files = Array.from(fileList).filter(
-    (file) => file && typeof file.type === "string" && file.type.startsWith("image/"),
+    (file) =>
+      file && typeof file.type === "string" && file.type.startsWith("image/"),
   );
 
   if (!files.length) {
@@ -771,7 +801,12 @@ function requestRender(parts = {}) {
 function flushRenderQueue() {
   renderQueue.scheduled = false;
 
-  if (!els.previewCard || !els.emptyState || !els.thumbStrip || !els.carouselTrack) {
+  if (
+    !els.previewCard ||
+    !els.emptyState ||
+    !els.thumbStrip ||
+    !els.carouselTrack
+  ) {
     if (!els.previewCard) warnMissingDom("previewCard");
     if (!els.emptyState) warnMissingDom("emptyState");
     if (!els.thumbStrip) warnMissingDom("thumbStrip");
@@ -1140,7 +1175,10 @@ function onThumbPointerEnd(event) {
 function startThumbReorder(session, clientX, clientY) {
   if (session.active || !session.thumbEl?.isConnected) return;
 
-  const moveDistance = Math.hypot(clientX - session.startX, clientY - session.startY);
+  const moveDistance = Math.hypot(
+    clientX - session.startX,
+    clientY - session.startY,
+  );
   if (
     !session.startedFromHandle &&
     moveDistance < THUMB_REORDER.startMovePx &&
@@ -1289,9 +1327,7 @@ function syncStateOrderFromThumbDom() {
 
   const activeId = state.images[state.activeIndex]?.id;
   const map = new Map(state.images.map((img) => [img.id, img]));
-  state.images = order
-    .map((id) => map.get(id))
-    .filter(Boolean);
+  state.images = order.map((id) => map.get(id)).filter(Boolean);
   state.activeIndex = Math.max(
     0,
     state.images.findIndex((img) => img.id === activeId),
@@ -1452,12 +1488,7 @@ function applyDotsPosition(xPct = state.dots.xPct, yPct = state.dots.yPct) {
   if (!rect) return;
   const rowMetrics = getDotsRowMetrics();
   const dotRadius = getDotRadiusFromRect(rect);
-  const center = getAnchoredCenterFromPct(
-    xPct,
-    yPct,
-    rect,
-    dotRadius,
-  );
+  const center = getAnchoredCenterFromPct(xPct, yPct, rect, dotRadius);
 
   const overlayLeft = center.x - rowMetrics.halfW;
   const overlayTop = center.y - rowMetrics.halfH;
@@ -1618,7 +1649,7 @@ async function exportSinglePng() {
   setExportBusy(true, t("export.renderingPng"));
   try {
     const blob = await renderSlideToBlob(0, "png");
-    downloadBlob(blob, "dotfolio-01.png");
+    downloadBlob(blob, "dotten-01.png");
     showToast("toast.pngDownloaded");
   } finally {
     setExportBusy(false);
@@ -2015,16 +2046,18 @@ function mergeSettings(saved) {
   if (!saved || typeof saved !== "object") return defaults;
 
   const language = saved.language === "uz" ? "uz" : defaults.language;
-  const theme = saved.theme === "light" || saved.theme === "dark"
-    ? saved.theme
-    : defaults.theme;
+  const theme =
+    saved.theme === "light" || saved.theme === "dark"
+      ? saved.theme
+      : defaults.theme;
   const exportFormat = saved.exportFormat === "jpeg" ? "jpeg" : "png";
 
-  const transition =
-    saved.carousel?.transition === "fade" ? "fade" : "slide";
+  const transition = saved.carousel?.transition === "fade" ? "fade" : "slide";
   const fit = saved.carousel?.fit === "cover" ? "cover" : "contain";
 
-  const dotStyle = ["outlined", "filled", "numbered"].includes(saved.dots?.style)
+  const dotStyle = ["outlined", "filled", "numbered"].includes(
+    saved.dots?.style,
+  )
     ? saved.dots.style
     : defaults.dots.style;
   const activeBehavior = ["filled", "larger", "opacity"].includes(
@@ -2034,8 +2067,16 @@ function mergeSettings(saved) {
     : defaults.dots.activeBehavior;
 
   const previewMinDim = getPreviewReferenceMinDim();
-  const xPct = normalizeDotRatio(saved.dots?.xPct, saved.dots?.x, defaults.dots.xPct);
-  const yPct = normalizeDotRatio(saved.dots?.yPct, saved.dots?.y, defaults.dots.yPct);
+  const xPct = normalizeDotRatio(
+    saved.dots?.xPct,
+    saved.dots?.x,
+    defaults.dots.xPct,
+  );
+  const yPct = normalizeDotRatio(
+    saved.dots?.yPct,
+    saved.dots?.y,
+    defaults.dots.yPct,
+  );
   const sizePct = normalizeDotRatio(
     saved.dots?.sizePct,
     saved.dots?.sizePx,
@@ -2065,8 +2106,12 @@ function mergeSettings(saved) {
       activeBehavior,
       sizePct: clamp(sizePct, DOT_SIZE_MIN, DOT_SIZE_MAX),
       gapPct: clamp(gapPct, DOT_GAP_MIN, DOT_GAP_MAX),
-      inactiveColor: normalizeHex(saved.dots?.inactiveColor || defaults.dots.inactiveColor),
-      activeColor: normalizeHex(saved.dots?.activeColor || defaults.dots.activeColor),
+      inactiveColor: normalizeHex(
+        saved.dots?.inactiveColor || defaults.dots.inactiveColor,
+      ),
+      activeColor: normalizeHex(
+        saved.dots?.activeColor || defaults.dots.activeColor,
+      ),
       pill: Boolean(saved.dots?.pill),
       snap: saved.dots?.snap !== false,
       xPct: clamp(xPct, 0, 1),
