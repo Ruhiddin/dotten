@@ -1363,12 +1363,12 @@ function onDotsDragStart(event) {
   const imageRect = getCurrentRenderedImageRect();
   if (!imageRect) return;
   const rowMetrics = getDotsRowMetrics();
+  const dotRadius = getDotRadiusFromRect(imageRect);
   const currentCenter = getAnchoredCenterFromPct(
     state.dots.xPct,
     state.dots.yPct,
     imageRect,
-    rowMetrics.halfW,
-    rowMetrics.halfH,
+    dotRadius,
   );
 
   drag.dots = {
@@ -1376,6 +1376,7 @@ function onDotsDragStart(event) {
     moved: false,
     viewport,
     imageRect,
+    dotRadius,
     rowHalfW: rowMetrics.halfW,
     rowHalfH: rowMetrics.halfH,
     offsetX: event.clientX - (viewport.left + currentCenter.x),
@@ -1403,13 +1404,13 @@ function onDotsDragMove(event) {
 
   centerX = clampCenterAxis(
     centerX,
-    d.imageRect.x + d.rowHalfW,
-    d.imageRect.x + d.imageRect.w - d.rowHalfW,
+    d.imageRect.x + d.dotRadius,
+    d.imageRect.x + d.imageRect.w - d.dotRadius,
   );
   centerY = clampCenterAxis(
     centerY,
-    d.imageRect.y + d.rowHalfH,
-    d.imageRect.y + d.imageRect.h - d.rowHalfH,
+    d.imageRect.y + d.dotRadius,
+    d.imageRect.y + d.imageRect.h - d.dotRadius,
   );
 
   let xPct = (centerX - d.imageRect.x) / d.imageRect.w;
@@ -1450,12 +1451,12 @@ function applyDotsPosition(xPct = state.dots.xPct, yPct = state.dots.yPct) {
   const rect = getCurrentRenderedImageRect();
   if (!rect) return;
   const rowMetrics = getDotsRowMetrics();
+  const dotRadius = getDotRadiusFromRect(rect);
   const center = getAnchoredCenterFromPct(
     xPct,
     yPct,
     rect,
-    rowMetrics.halfW,
-    rowMetrics.halfH,
+    dotRadius,
   );
 
   const overlayLeft = center.x - rowMetrics.halfW;
@@ -1477,19 +1478,25 @@ function getDotsRowMetrics() {
   };
 }
 
-function getAnchoredCenterFromPct(xPct, yPct, imageRect, halfW, halfH) {
+function getDotRadiusFromRect(imageRect) {
+  const minDim = Math.min(imageRect.w, imageRect.h);
+  const dotDiameter = Math.max(1, minDim * state.dots.sizePct);
+  return dotDiameter / 2;
+}
+
+function getAnchoredCenterFromPct(xPct, yPct, imageRect, dotRadius) {
   let centerX = imageRect.x + xPct * imageRect.w;
   let centerY = imageRect.y + yPct * imageRect.h;
 
   centerX = clampCenterAxis(
     centerX,
-    imageRect.x + halfW,
-    imageRect.x + imageRect.w - halfW,
+    imageRect.x + dotRadius,
+    imageRect.x + imageRect.w - dotRadius,
   );
   centerY = clampCenterAxis(
     centerY,
-    imageRect.y + halfH,
-    imageRect.y + imageRect.h - halfH,
+    imageRect.y + dotRadius,
+    imageRect.y + imageRect.h - dotRadius,
   );
 
   return { x: centerX, y: centerY };
@@ -1715,8 +1722,8 @@ function drawDotsToCanvas(ctx, width, height, activeIndex) {
   const radius = dotSize / 2;
   const totalWidth = count * dotSize + (count - 1) * gap;
 
-  const centerX = dots.xPct * width;
-  const centerY = dots.yPct * height;
+  const centerX = clampCenterAxis(dots.xPct * width, radius, width - radius);
+  const centerY = clampCenterAxis(dots.yPct * height, radius, height - radius);
   const startX = centerX - totalWidth / 2;
 
   ctx.save();
