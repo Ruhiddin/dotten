@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dotten</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-theme="light">
+  <header class="appbar">
+    <div class="brand-wrap">
+      <h1 data-i18n="app.title">Dotten</h1>
+      <p class="app-subtitle" data-i18n="app.subtitle">Design pixel-perfect carousel dots and export fast.</p>
+    </div>
+    <div class="appbar-controls">
+      <div id="languageToggle" class="lang-control segmented-toggle" role="group" aria-label="Language switcher" data-i18n-attr="aria-label:aria.languageSwitcher">
+        <button id="langEnBtn" class="lang-btn" type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button id="langUzBtn" class="lang-btn" type="button" data-lang="uz" aria-pressed="false">UZ</button>
+      </div>
+      <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme" data-i18n-attr="aria-label:aria.toggleTheme">
+        <span class="sun">☀</span>
+        <span class="moon">☾</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="left-column">
+      <article id="previewCard" class="card preview-card" aria-label="Preview area" data-i18n-attr="aria-label:aria.previewArea">
+        <div class="card-head">
+          <h2 data-i18n="preview.title">Preview</h2>
+          <p id="previewMeta"></p>
+        </div>
+
+        <div id="carouselViewport" class="carousel-viewport" role="region" aria-roledescription="carousel" aria-label="Carousel preview" tabindex="0" data-i18n-attr="aria-label:aria.carouselPreview">
+          <div id="carouselTrack" class="carousel-track" aria-live="polite"></div>
+          <button id="prevArrow" class="nav-arrow prev" type="button" aria-label="Previous slide" data-i18n-attr="aria-label:aria.prevSlide">‹</button>
+          <button id="nextArrow" class="nav-arrow next" type="button" aria-label="Next slide" data-i18n-attr="aria-label:aria.nextSlide">›</button>
+
+          <div id="snapGuides" class="snap-guides" aria-hidden="true">
+            <span class="guide guide-v-center"></span>
+            <span class="guide guide-h-center"></span>
+            <span class="guide guide-v-left"></span>
+            <span class="guide guide-v-right"></span>
+            <span class="guide guide-h-top"></span>
+            <span class="guide guide-h-bottom"></span>
+          </div>
+
+          <div id="dotsOverlay" class="dots-overlay" aria-label="Pagination dots overlay" data-i18n-attr="aria-label:aria.dotsOverlay">
+            <div class="drag-hint" aria-hidden="true" data-i18n="preview.dragDots">Drag dots</div>
+            <div id="dotsContainer" class="dots-container" role="tablist" aria-label="Carousel pagination" data-i18n-attr="aria-label:aria.carouselPagination"></div>
+          </div>
+
+          <div id="emptyState" class="empty-state" aria-hidden="false">
+            <p data-i18n="preview.empty">Add images to start designing.</p>
+          </div>
+        </div>
+
+        <div class="thumb-strip-wrap">
+          <button id="thumbScrollLeft" class="thumb-scroll" type="button" aria-label="Scroll thumbnails left" data-i18n-attr="aria-label:aria.scrollThumbsLeft">‹</button>
+          <div id="thumbStrip" class="thumb-strip" aria-label="Image thumbnails" data-i18n-attr="aria-label:aria.imageThumbnails"></div>
+          <button id="thumbScrollRight" class="thumb-scroll" type="button" aria-label="Scroll thumbnails right" data-i18n-attr="aria-label:aria.scrollThumbsRight">›</button>
+        </div>
+
+        <div class="preview-actions">
+          <button id="pickImagesBtn" class="btn" type="button" data-i18n="actions.addImages">Add Images</button>
+          <button id="exportBtn" class="btn primary" type="button" data-i18n="export.buttonDefault">Export</button>
+        </div>
+      </article>
+    </section>
+
+    <aside class="right-column card" aria-label="Settings panel" data-i18n-attr="aria-label:aria.settingsPanel">
+      <div class="settings-scroll">
+        <details class="section" open>
+          <summary data-i18n="sections.images">Images</summary>
+          <div class="section-body">
+            <input id="imageInput" type="file" accept="image/*" multiple hidden>
+            <label id="dropZone" class="dropzone" for="imageInput">
+              <span data-i18n="images.dropTitle">Drag & drop images</span>
+              <small data-i18n="images.dropSub">or tap to browse</small>
+            </label>
+          </div>
+        </details>
+
+        <details class="section" open>
+          <summary data-i18n="sections.carousel">Carousel</summary>
+          <div class="section-body">
+            <label class="switch-row">
+              <span data-i18n="carousel.showArrows">Show arrows</span>
+              <input id="showArrows" type="checkbox">
+            </label>
+            <label class="switch-row">
+              <span data-i18n="carousel.infiniteLoop">Infinite loop</span>
+              <input id="infiniteLoop" type="checkbox">
+            </label>
+            <label class="field">
+              <span data-i18n="carousel.transition">Transition</span>
+              <div class="segmented">
+                <button type="button" data-segment="transition" data-value="slide" class="seg" data-i18n="carousel.slide">Slide</button>
+                <button type="button" data-segment="transition" data-value="fade" class="seg" data-i18n="carousel.fade">Fade</button>
+              </div>
+            </label>
+            <label class="field">
+              <span data-i18n="carousel.fitMode">Fit mode</span>
+              <div class="segmented">
+                <button type="button" data-segment="fit" data-value="contain" class="seg" data-i18n="carousel.contain">Contain</button>
+                <button type="button" data-segment="fit" data-value="cover" class="seg" data-i18n="carousel.cover">Cover</button>
+              </div>
+            </label>
+          </div>
+        </details>
+
+        <details class="section" open>
+          <summary data-i18n="sections.dots">Dots</summary>
+          <div class="section-body">
+            <label class="field">
+              <span data-i18n="dots.style">Style</span>
+              <div class="segmented three">
+                <button type="button" data-segment="dotStyle" data-value="outlined" class="seg" data-i18n="dots.outlined">Outlined</button>
+                <button type="button" data-segment="dotStyle" data-value="filled" class="seg" data-i18n="dots.filled">Filled</button>
+                <button type="button" data-segment="dotStyle" data-value="numbered" class="seg" data-i18n="dots.numbered">Numbered</button>
+              </div>
+            </label>
+
+            <label class="field">
+              <span data-i18n="dots.activeBehavior">Active behavior</span>
+              <select id="activeBehavior">
+                <option value="filled" data-i18n="dots.behaviorFilled">Filled contrast</option>
+                <option value="larger" data-i18n="dots.behaviorLarger">Larger active</option>
+                <option value="opacity" data-i18n="dots.behaviorOpacity">Stronger opacity</option>
+              </select>
+            </label>
+
+            <label class="field slider-field">
+              <span><span data-i18n="dots.size">Size</span> <output id="dotSizeOut">1.4</output>%</span>
+              <input id="dotSize" type="range" min="0.6" max="4" step="0.1" value="1.4">
+            </label>
+
+            <label class="field slider-field">
+              <span><span data-i18n="dots.spacing">Spacing</span> <output id="dotGapOut">1.1</output>%</span>
+              <input id="dotGap" type="range" min="0.2" max="3" step="0.1" value="1.1">
+            </label>
+
+            <div class="color-grid">
+              <div class="color-field">
+                <label for="dotInactiveHex" data-i18n="dots.inactive">Inactive</label>
+                <div class="color-input-row">
+                  <input id="dotInactive" type="color" value="#d1d5db" aria-label="Inactive color picker" data-i18n-attr="aria-label:aria.inactiveColorPicker">
+                  <input id="dotInactiveHex" type="text" value="#d1d5db" aria-label="Inactive color hex" data-i18n-attr="aria-label:aria.inactiveColorHex">
+                </div>
+              </div>
+              <div class="color-field">
+                <label for="dotActiveHex" data-i18n="dots.active">Active</label>
+                <div class="color-input-row">
+                  <input id="dotActive" type="color" value="#2563eb" aria-label="Active color picker" data-i18n-attr="aria-label:aria.activeColorPicker">
+                  <input id="dotActiveHex" type="text" value="#2563eb" aria-label="Active color hex" data-i18n-attr="aria-label:aria.activeColorHex">
+                </div>
+              </div>
+            </div>
+
+            <label class="switch-row">
+              <span data-i18n="dots.backgroundPill">Background pill</span>
+              <input id="dotPill" type="checkbox">
+            </label>
+
+            <div class="subpanel">
+              <h4 data-i18n="dots.position">Position</h4>
+              <label class="switch-row">
+                <span data-i18n="dots.snapToGuides">Snap to guides</span>
+                <input id="snapToGuides" type="checkbox">
+              </label>
+              <button id="resetPositionBtn" class="btn" type="button" data-i18n="dots.resetPosition">Reset position</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="section" open>
+          <summary data-i18n="sections.export">Export</summary>
+          <div class="section-body">
+            <label class="field">
+              <span data-i18n="export.formatLabel">Format (ZIP contents when multiple)</span>
+              <div class="segmented">
+                <button type="button" data-segment="format" data-value="png" class="seg" data-i18n="export.png">PNG</button>
+                <button type="button" data-segment="format" data-value="jpeg" class="seg" data-i18n="export.jpeg">JPEG</button>
+              </div>
+            </label>
+            <p id="exportSummary" class="muted"></p>
+            <div class="actions-row">
+              <button id="exportBtnPanel" class="btn primary" type="button" data-i18n="export.buttonDefault">Export</button>
+              <button id="resetBtn" class="btn" type="button" data-i18n="actions.reset">Reset</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </aside>
+  </main>
+
+  <div id="mobileExportBar" class="mobile-export-bar" hidden>
+    <button id="exportBtnMobile" class="btn primary" type="button" data-i18n="export.buttonDefault">Export</button>
+  </div>
+
+  <footer class="site-footer" aria-label="Footer" data-i18n-attr="aria-label:aria.footer">
+    <p id="footerCopyright"></p>
+    <p id="footerMade"></p>
+    <a class="social-link" href="https://instagram.com/bit_herd" target="_blank" rel="noopener noreferrer" aria-label="Instagram @bit_herd" data-i18n-attr="aria-label:aria.instagram">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm11.5 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+      </svg>
+      <span>@bit_herd</span>
+    </a>
+    <a class="social-link" href="https://t.me/bit_herd" target="_blank" rel="noopener noreferrer" aria-label="Telegram @bit_herd" data-i18n-attr="aria-label:aria.telegram">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M22 3.8 2.9 11.2c-1.3.5-1.3 1.3-.2 1.6l4.9 1.5L18.9 7c.5-.3 1-.1.6.3l-9.1 8.2-.3 4.7c.4 0 .6-.2.9-.4l2.4-2.3 5 3.7c.9.5 1.5.3 1.8-.8L23 5.1c.4-1.4-.5-2.1-1-1.3z"/>
+      </svg>
+      <span>@bit_herd</span>
+    </a>
+  </footer>
+
+  <div id="toastRoot" class="toast-root" aria-live="polite" aria-atomic="true"></div>
+
+</body>
+</html>
