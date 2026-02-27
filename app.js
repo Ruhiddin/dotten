@@ -1,7 +1,11 @@
-const STORAGE_KEY = "dotten:v1";
-const LEGACY_STORAGE_KEYS = ["dotfolio:v1"];
-const STORAGE_SCHEMA = 1;
+const STORAGE_KEY = "dotten:v2";
+const LEGACY_STORAGE_KEYS = ["dotten:v1", "dotfolio:v1"];
+const STORAGE_SCHEMA = 2;
 const ZIP_BASE_NAME = "dotfolio-ruhiddin.github.io-dotfolio.zip";
+const DOT_SIZE_MIN = 0.006;
+const DOT_SIZE_MAX = 0.04;
+const DOT_GAP_MIN = 0.002;
+const DOT_GAP_MAX = 0.03;
 console.log("[Dotten] app.js loaded", new Date().toISOString());
 
 applyInitialTheme();
@@ -264,14 +268,14 @@ function createDefaultState(language = detectDefaultLanguage()) {
     dots: {
       style: "outlined",
       activeBehavior: "filled",
-      sizePct: 1.4,
-      gapPct: 1.1,
+      sizePct: 0.014,
+      gapPct: 0.011,
       inactiveColor: "#d1d5db",
       activeColor: "#2563eb",
       pill: false,
       snap: true,
-      xPct: 50,
-      yPct: 88,
+      xPct: 0.5,
+      yPct: 0.88,
     },
   };
 }
@@ -486,15 +490,15 @@ function bindEvents() {
   });
 
   addSafeListener(els.dotSize, "dotSize", "input", (e) => {
-    state.dots.sizePct = Number(e.target.value);
-    els.dotSizeOut.value = state.dots.sizePct.toFixed(1);
+    state.dots.sizePct = clamp(Number(e.target.value) / 100, DOT_SIZE_MIN, DOT_SIZE_MAX);
+    els.dotSizeOut.value = (state.dots.sizePct * 100).toFixed(1);
     requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
 
   addSafeListener(els.dotGap, "dotGap", "input", (e) => {
-    state.dots.gapPct = Number(e.target.value);
-    els.dotGapOut.value = state.dots.gapPct.toFixed(1);
+    state.dots.gapPct = clamp(Number(e.target.value) / 100, DOT_GAP_MIN, DOT_GAP_MAX);
+    els.dotGapOut.value = (state.dots.gapPct * 100).toFixed(1);
     requestRender({ preview: true, controls: false });
     queueSaveSettings();
   });
@@ -522,8 +526,8 @@ function bindEvents() {
   });
 
   addSafeListener(els.resetPositionBtn, "resetPositionBtn", "click", () => {
-    state.dots.xPct = 50;
-    state.dots.yPct = 88;
+    state.dots.xPct = 0.5;
+    state.dots.yPct = 0.88;
     applyDotsPosition();
     queueSaveSettings();
   });
@@ -732,7 +736,7 @@ async function handleFiles(fileList) {
 
 function fileToRecord(file) {
   // Preview-performance path: keep lightweight object URLs for instant on-screen rendering.
-  return {
+  const record = {
     id: crypto.randomUUID(),
     file,
     name: file.name,
@@ -740,6 +744,20 @@ function fileToRecord(file) {
     naturalWidth: 0,
     naturalHeight: 0,
   };
+  warmImageNaturalSize(record);
+  return record;
+}
+
+function warmImageNaturalSize(record) {
+  const img = new Image();
+  img.onload = () => {
+    if (!record.naturalWidth || !record.naturalHeight) {
+      record.naturalWidth = img.naturalWidth;
+      record.naturalHeight = img.naturalHeight;
+      requestRender({ preview: true, controls: false });
+    }
+  };
+  img.src = record.objectUrl;
 }
 
 function requestRender(parts = {}) {
@@ -838,12 +856,12 @@ function renderDots() {
   els.dotsOverlay.hidden = !showDots;
   if (!showDots) return;
 
-  const minPreview = Math.min(
-    els.carouselViewport.clientWidth,
-    els.carouselViewport.clientHeight,
-  );
-  const dotSizePx = Math.max(8, (minPreview * state.dots.sizePct) / 100);
-  const dotGapPx = Math.max(4, (minPreview * state.dots.gapPct) / 100);
+  const imageRect = getCurrentRenderedImageRect();
+  if (!imageRect) return;
+
+  const minPreview = Math.min(imageRect.w, imageRect.h);
+  const dotSizePx = Math.max(1, minPreview * state.dots.sizePct);
+  const dotGapPx = Math.max(0, minPreview * state.dots.gapPct);
 
   els.dotsContainer.style.setProperty(
     "--dot-size",
@@ -872,6 +890,81 @@ function renderDots() {
     });
     els.dotsContainer.appendChild(dot);
   });
+}
+
+function getCurrentRenderedImageRect() {
+  const active = state.images[state.activeIndex];
+  if (!active || !els.carouselViewport) return null;
+
+  let naturalW = active.naturalWidth;
+  let naturalH = active.naturalHeight;
+
+  // Fallback to active DOM image natural size if not yet cached in state.
+  if (!naturalW || !naturalH) {
+    const activeImg = els.carouselTrack?.querySelector(".slide.active img");
+    if (activeImg?.naturalWidth && activeImg?.naturalHeight) {
+      naturalW = activeImg.naturalWidth;
+      naturalH = activeImg.naturalHeight;
+      active.naturalWidth = naturalW;
+      active.naturalHeight = naturalH;
+    }
+  }
+
+  if (!naturalW || !naturalH) {
+    naturalW = 1;
+    naturalH = 1;
+  }
+
+  return getRenderedImageRect(
+    els.carouselViewport.clientWidth,
+    els.carouselViewport.clientHeight,
+    naturalW,
+    naturalH,
+    state.carousel.fit,
+  );
+}
+
+function getRenderedImageRect(
+  containerW,
+  containerH,
+  imgNaturalW,
+  imgNaturalH,
+  fitMode,
+) {
+  const cW = Math.max(1, containerW);
+  const cH = Math.max(1, containerH);
+  const iW = Math.max(1, imgNaturalW);
+  const iH = Math.max(1, imgNaturalH);
+  const imageRatio = iW / iH;
+  const containerRatio = cW / cH;
+
+  let w;
+  let h;
+
+  if (fitMode === "cover") {
+    if (imageRatio > containerRatio) {
+      h = cH;
+      w = cH * imageRatio;
+    } else {
+      w = cW;
+      h = cW / imageRatio;
+    }
+  } else {
+    if (imageRatio > containerRatio) {
+      w = cW;
+      h = cW / imageRatio;
+    } else {
+      h = cH;
+      w = cH * imageRatio;
+    }
+  }
+
+  return {
+    x: (cW - w) / 2,
+    y: (cH - h) / 2,
+    w,
+    h,
+  };
 }
 
 function renderThumbs() {
@@ -1269,13 +1362,14 @@ function revokeAllImageUrls() {
 function onDotsDragStart(event) {
   if (state.images.length < 2) return;
   const viewport = els.carouselViewport.getBoundingClientRect();
-  const overlay = els.dotsOverlay.getBoundingClientRect();
+  const imageRect = getCurrentRenderedImageRect();
+  if (!imageRect) return;
+
   drag.dots = {
     pointerId: event.pointerId,
     moved: false,
     viewport,
-    halfW: (overlay.width / 2 / viewport.width) * 100,
-    halfH: (overlay.height / 2 / viewport.height) * 100,
+    imageRect,
     xPct: state.dots.xPct,
     yPct: state.dots.yPct,
   };
@@ -1294,19 +1388,21 @@ function onDotsDragMove(event) {
   event.preventDefault();
   d.moved = true;
 
-  let xPct = ((event.clientX - d.viewport.left) / d.viewport.width) * 100;
-  let yPct = ((event.clientY - d.viewport.top) / d.viewport.height) * 100;
+  const localX = event.clientX - d.viewport.left;
+  const localY = event.clientY - d.viewport.top;
+  let xPct = (localX - d.imageRect.x) / d.imageRect.w;
+  let yPct = (localY - d.imageRect.y) / d.imageRect.h;
 
-  xPct = clamp(xPct, d.halfW, 100 - d.halfW);
-  yPct = clamp(yPct, d.halfH, 100 - d.halfH);
+  xPct = clamp(xPct, 0, 1);
+  yPct = clamp(yPct, 0, 1);
 
   if (state.dots.snap) {
-    xPct = snapValue(xPct, [5, 50, 95], 2.6);
-    yPct = snapValue(yPct, [8, 50, 92], 2.6);
+    xPct = snapValue(xPct, [0.05, 0.5, 0.95], 0.026);
+    yPct = snapValue(yPct, [0.08, 0.5, 0.92], 0.026);
   }
 
-  d.xPct = roundTwo(xPct);
-  d.yPct = roundTwo(yPct);
+  d.xPct = roundFour(xPct);
+  d.yPct = roundFour(yPct);
   applyDotsPosition(d.xPct, d.yPct);
 }
 
@@ -1329,8 +1425,12 @@ function onDotsDragEnd(event) {
 }
 
 function applyDotsPosition(xPct = state.dots.xPct, yPct = state.dots.yPct) {
-  els.dotsOverlay.style.left = `${xPct}%`;
-  els.dotsOverlay.style.top = `${yPct}%`;
+  const rect = getCurrentRenderedImageRect();
+  if (!rect) return;
+  const x = rect.x + xPct * rect.w;
+  const y = rect.y + yPct * rect.h;
+  els.dotsOverlay.style.left = `${x}px`;
+  els.dotsOverlay.style.top = `${y}px`;
 }
 
 function onSwipeStart(event) {
@@ -1543,20 +1643,20 @@ function drawDotsToCanvas(ctx, width, height, activeIndex) {
   const dots = state.dots;
   const minDim = Math.min(width, height);
 
-  const dotSize = Math.max(6, (minDim * dots.sizePct) / 100);
-  const gap = Math.max(2, (minDim * dots.gapPct) / 100);
+  const dotSize = Math.max(1, minDim * dots.sizePct);
+  const gap = Math.max(0, minDim * dots.gapPct);
   const radius = dotSize / 2;
   const totalWidth = count * dotSize + (count - 1) * gap;
 
-  const centerX = (dots.xPct / 100) * width;
-  const centerY = (dots.yPct / 100) * height;
+  const centerX = dots.xPct * width;
+  const centerY = dots.yPct * height;
   const startX = centerX - totalWidth / 2;
 
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = Math.max(1, dotSize * 0.12);
-  ctx.font = `600 ${Math.max(9, dotSize * 0.55)}px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif`;
+  ctx.font = `600 ${Math.max(1, dotSize * 0.55)}px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif`;
 
   if (dots.pill) {
     const padX = Math.max(6, dotSize * 0.66);
@@ -1738,10 +1838,10 @@ function syncControlsFromState() {
   els.showArrows.checked = state.carousel.showArrows;
   els.infiniteLoop.checked = state.carousel.infinite;
   els.activeBehavior.value = state.dots.activeBehavior;
-  els.dotSize.value = String(state.dots.sizePct);
-  els.dotGap.value = String(state.dots.gapPct);
-  els.dotSizeOut.value = state.dots.sizePct.toFixed(1);
-  els.dotGapOut.value = state.dots.gapPct.toFixed(1);
+  els.dotSize.value = String((state.dots.sizePct * 100).toFixed(1));
+  els.dotGap.value = String((state.dots.gapPct * 100).toFixed(1));
+  els.dotSizeOut.value = (state.dots.sizePct * 100).toFixed(1);
+  els.dotGapOut.value = (state.dots.gapPct * 100).toFixed(1);
   els.dotInactive.value = state.dots.inactiveColor;
   els.dotInactiveHex.value = state.dots.inactiveColor;
   els.dotActive.value = state.dots.activeColor;
@@ -1835,12 +1935,10 @@ function writeStorage(payload) {
 }
 
 function mergeSettings(saved) {
-  // Key fix: validate persisted settings against defaults to prevent invalid localStorage
-  // from producing undefined state and runtime crashes.
+  // Validate persisted settings and migrate legacy dot geometry to normalized ratios.
   const defaults = createDefaultState();
 
   if (!saved || typeof saved !== "object") return defaults;
-  if (saved.version !== STORAGE_SCHEMA) return defaults;
 
   const language = saved.language === "uz" ? "uz" : defaults.language;
   const theme = saved.theme === "light" || saved.theme === "dark"
@@ -1861,6 +1959,22 @@ function mergeSettings(saved) {
     ? saved.dots.activeBehavior
     : defaults.dots.activeBehavior;
 
+  const previewMinDim = getPreviewReferenceMinDim();
+  const xPct = normalizeDotRatio(saved.dots?.xPct, saved.dots?.x, defaults.dots.xPct);
+  const yPct = normalizeDotRatio(saved.dots?.yPct, saved.dots?.y, defaults.dots.yPct);
+  const sizePct = normalizeDotRatio(
+    saved.dots?.sizePct,
+    saved.dots?.sizePx,
+    defaults.dots.sizePct,
+    previewMinDim,
+  );
+  const gapPct = normalizeDotRatio(
+    saved.dots?.gapPct,
+    saved.dots?.gapPx,
+    defaults.dots.gapPct,
+    previewMinDim,
+  );
+
   return {
     ...defaults,
     language,
@@ -1875,16 +1989,37 @@ function mergeSettings(saved) {
     dots: {
       style: dotStyle,
       activeBehavior,
-      sizePct: clamp(toNumber(saved.dots?.sizePct, defaults.dots.sizePct), 0.6, 4),
-      gapPct: clamp(toNumber(saved.dots?.gapPct, defaults.dots.gapPct), 0.2, 3),
+      sizePct: clamp(sizePct, DOT_SIZE_MIN, DOT_SIZE_MAX),
+      gapPct: clamp(gapPct, DOT_GAP_MIN, DOT_GAP_MAX),
       inactiveColor: normalizeHex(saved.dots?.inactiveColor || defaults.dots.inactiveColor),
       activeColor: normalizeHex(saved.dots?.activeColor || defaults.dots.activeColor),
       pill: Boolean(saved.dots?.pill),
       snap: saved.dots?.snap !== false,
-      xPct: clamp(toNumber(saved.dots?.xPct, defaults.dots.xPct), 0, 100),
-      yPct: clamp(toNumber(saved.dots?.yPct, defaults.dots.yPct), 0, 100),
+      xPct: clamp(xPct, 0, 1),
+      yPct: clamp(yPct, 0, 1),
     },
   };
+}
+
+function normalizeDotRatio(primary, legacyPx, fallback, pxBase = 1) {
+  const val = Number(primary);
+  if (Number.isFinite(val)) {
+    if (val > 1) return val / 100;
+    if (val >= 0) return val;
+  }
+
+  const px = Number(legacyPx);
+  if (Number.isFinite(px) && px >= 0 && pxBase > 0) {
+    return px / pxBase;
+  }
+
+  return fallback;
+}
+
+function getPreviewReferenceMinDim() {
+  const width = els.carouselViewport?.clientWidth || 1000;
+  const height = els.carouselViewport?.clientHeight || 1000;
+  return Math.max(1, Math.min(width, height));
 }
 
 function toNumber(value, fallback) {
@@ -1932,6 +2067,10 @@ function snapValue(v, points, threshold) {
 
 function roundTwo(v) {
   return Math.round(v * 100) / 100;
+}
+
+function roundFour(v) {
+  return Math.round(v * 10000) / 10000;
 }
 
 function escapeHtml(text) {
