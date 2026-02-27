@@ -311,6 +311,10 @@ body[data-theme="dark"] .sun { opacity: 0.35; }
   touch-action: pan-x;
 }
 
+.thumb-strip.reorder-active {
+  touch-action: none;
+}
+
 .thumb {
   width: 94px;
   min-width: 94px;
@@ -331,6 +335,24 @@ body[data-theme="dark"] .sun { opacity: 0.35; }
   transform: scale(1.06);
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.22);
   z-index: 10;
+}
+
+.thumb.dragging-pointer {
+  position: fixed;
+  margin: 0;
+  z-index: 60;
+  transform: translate3d(0, 0, 0);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.26);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.thumb-placeholder {
+  width: 94px;
+  min-width: 94px;
+  border-radius: 12px;
+  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
 
 .thumb.drop-target { box-shadow: inset 0 0 0 2px var(--accent); }
@@ -366,6 +388,14 @@ body[data-theme="dark"] .sun { opacity: 0.35; }
   display: grid;
   place-items: center;
   padding: 0;
+}
+
+.drag-handle {
+  touch-action: none;
+}
+
+body.thumb-reordering {
+  overflow: hidden;
 }
 
 .preview-actions {
@@ -623,6 +653,12 @@ select:focus-visible,
 
   .site-footer {
     padding-bottom: 76px;
+  }
+}
+
+@media (pointer: coarse) {
+  .thumb {
+    -webkit-user-drag: none;
   }
 }
 

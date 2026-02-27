@@ -338,6 +338,16 @@ const drag = {
   dots: null,
   thumb: null,
 };
+// Mobile reorder thresholds:
+// - Long press activates drag from thumbnail body.
+// - Small movement before hold means "scroll", not reorder.
+const THUMB_REORDER = {
+  longPressMs: 220,
+  cancelMovePx: 8,
+  startMovePx: 4,
+  autoScrollEdgePx: 56,
+  autoScrollMaxSpeed: 18,
+};
 const missingDomWarnings = new Set();
 
 const debouncedSaveSettings = debounce(saveSettings, 200);
@@ -867,12 +877,14 @@ function renderDots() {
 function renderThumbs() {
   const oldScroll = els.thumbStrip.scrollLeft;
   els.thumbStrip.innerHTML = "";
+  const desktopDraggable = !isCoarsePointer();
 
   state.images.forEach((img, idx) => {
     const thumb = document.createElement("article");
     thumb.className = `thumb ${idx === state.activeIndex ? "active" : ""}`;
     thumb.dataset.index = String(idx);
-    thumb.draggable = true;
+    thumb.dataset.imageId = img.id;
+    thumb.draggable = desktopDraggable;
 
     thumb.innerHTML = `
       <img src="${img.objectUrl}" alt="${escapeHtml(t("aria.thumbnail", { current: idx + 1 }))}">
@@ -889,6 +901,10 @@ function renderThumbs() {
     const handleBtn = thumb.querySelector(".drag-handle");
 
     thumb.addEventListener("click", (e) => {
+      if (thumb.dataset.suppressClick === "1") {
+        thumb.dataset.suppressClick = "";
+        return;
+      }
       if (e.target.closest("button")) return;
       state.activeIndex = idx;
       requestRender({ preview: true, controls: false });
@@ -904,6 +920,10 @@ function renderThumbs() {
     });
 
     thumb.addEventListener("dragstart", (e) => {
+      if (isCoarsePointer()) {
+        e.preventDefault();
+        return;
+      }
       if (thumb.dataset.dragAllowed !== "1") {
         e.preventDefault();
         return;
@@ -945,105 +965,252 @@ function renderThumbs() {
 }
 
 function onThumbPointerDown(event, thumb, index) {
-  if (event.pointerType === "mouse" && !event.target.closest(".drag-handle"))
-    return;
+  const isTouchPointer =
+    event.pointerType === "touch" || event.pointerType === "pen";
+  if (!isTouchPointer) return;
+  if (event.button !== undefined && event.button !== 0) return;
 
   const fromHandle = Boolean(event.target.closest(".drag-handle"));
-  const holdMs = fromHandle ? 0 : 200;
   const session = {
     pointerId: event.pointerId,
+    thumbEl: thumb,
+    fromIndex: index,
     startX: event.clientX,
     startY: event.clientY,
-    fromIndex: index,
-    overIndex: index,
-    dragging: false,
-    longPressTriggered: false,
-    element: thumb,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    dragOffsetX: 0,
+    baseLeft: 0,
+    baseTop: 0,
+    active: false,
+    startedFromHandle: fromHandle,
+    longPressReady: fromHandle,
     holdTimer: null,
+    placeholderEl: null,
+    autoScrollRaf: 0,
   };
 
   drag.thumb = session;
 
+  // Dedicated handle starts reorder immediately.
+  if (fromHandle) {
+    startThumbReorder(session, event.clientX, event.clientY);
+    event.preventDefault();
+    return;
+  }
+
   session.holdTimer = setTimeout(() => {
-    session.longPressTriggered = true;
-  }, holdMs);
+    // Long-press path for touch: user can hold then drag anywhere on thumbnail.
+    session.longPressReady = true;
+    startThumbReorder(session, session.lastX, session.lastY);
+  }, THUMB_REORDER.longPressMs);
 }
 
-window.addEventListener(
-  "pointermove",
-  (event) => {
-    const d = drag.thumb;
-    if (!d || event.pointerId !== d.pointerId) return;
+window.addEventListener("pointermove", onThumbPointerMove, { passive: false });
+window.addEventListener("pointerup", onThumbPointerEnd);
+window.addEventListener("pointercancel", onThumbPointerEnd);
 
+function onThumbPointerMove(event) {
+  const d = drag.thumb;
+  if (!d || event.pointerId !== d.pointerId) return;
+
+  d.lastX = event.clientX;
+  d.lastY = event.clientY;
+
+  if (!d.active) {
     const dx = Math.abs(event.clientX - d.startX);
     const dy = Math.abs(event.clientY - d.startY);
-
-    if (!d.dragging) {
-      if (!d.longPressTriggered && (dx > 8 || dy > 8)) {
+    if (!d.startedFromHandle && !d.longPressReady) {
+      if (dx > THUMB_REORDER.cancelMovePx || dy > THUMB_REORDER.cancelMovePx) {
         clearTimeout(d.holdTimer);
         drag.thumb = null;
-        return;
-      }
-
-      if (d.longPressTriggered && (dx > 4 || dy > 4)) {
-        d.dragging = true;
-        d.element.classList.add("dragging");
-        document.body.style.overflow = "hidden";
       }
     }
+    return;
+  }
 
-    if (!d.dragging) return;
+  event.preventDefault();
+  updateDraggedThumbPosition(d, event.clientX);
+  updateThumbPlaceholder(d, event.clientX);
+}
 
-    event.preventDefault();
-    const target = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest(".thumb");
-    clearThumbDropTargets();
-    if (target) {
-      target.classList.add("drop-target");
-      const targetIndex = Number(target.dataset.index);
-      if (!Number.isNaN(targetIndex)) {
-        d.overIndex = targetIndex;
-      }
-    }
-
-    autoScrollThumbStrip(event.clientX);
-  },
-  { passive: false },
-);
-
-window.addEventListener("pointerup", (event) => {
-  endThumbPointerSession(event);
-});
-
-window.addEventListener("pointercancel", (event) => {
-  endThumbPointerSession(event);
-});
-
-function endThumbPointerSession(event) {
+function onThumbPointerEnd(event) {
   const d = drag.thumb;
   if (!d || event.pointerId !== d.pointerId) return;
 
   clearTimeout(d.holdTimer);
-  if (d.dragging) {
-    reorderImages(d.fromIndex, d.overIndex);
+  if (d.active) {
+    finishThumbReorder(d, true, event.pointerId);
   }
 
-  d.element.classList.remove("dragging");
-  clearThumbDropTargets();
-  document.body.style.overflow = "";
   drag.thumb = null;
 }
 
-function autoScrollThumbStrip(clientX) {
-  const rect = els.thumbStrip.getBoundingClientRect();
-  const edge = 44;
+function startThumbReorder(session, clientX, clientY) {
+  if (session.active || !session.thumbEl?.isConnected) return;
 
-  if (clientX < rect.left + edge) {
-    els.thumbStrip.scrollLeft -= 12;
-  } else if (clientX > rect.right - edge) {
-    els.thumbStrip.scrollLeft += 12;
+  const moveDistance = Math.hypot(clientX - session.startX, clientY - session.startY);
+  if (
+    !session.startedFromHandle &&
+    moveDistance < THUMB_REORDER.startMovePx &&
+    !session.longPressReady
+  ) {
+    return;
   }
+
+  const thumbRect = session.thumbEl.getBoundingClientRect();
+  session.baseLeft = thumbRect.left;
+  session.baseTop = thumbRect.top;
+  session.dragOffsetX = clientX - thumbRect.left;
+
+  const placeholder = document.createElement("article");
+  placeholder.className = "thumb-placeholder";
+  placeholder.style.width = `${thumbRect.width}px`;
+  placeholder.style.height = `${thumbRect.height}px`;
+  placeholder.setAttribute("aria-hidden", "true");
+  session.placeholderEl = placeholder;
+
+  els.thumbStrip.insertBefore(placeholder, session.thumbEl.nextSibling);
+
+  session.thumbEl.classList.add("dragging-pointer");
+  session.thumbEl.style.width = `${thumbRect.width}px`;
+  session.thumbEl.style.height = `${thumbRect.height}px`;
+  session.thumbEl.style.left = `${thumbRect.left}px`;
+  session.thumbEl.style.top = `${thumbRect.top}px`;
+  session.thumbEl.style.transform = "translate3d(0,0,0)";
+
+  document.body.classList.add("thumb-reordering");
+  els.thumbStrip.classList.add("reorder-active");
+
+  try {
+    session.thumbEl.setPointerCapture(session.pointerId);
+  } catch {
+    // Safari can throw if capture state changes unexpectedly.
+  }
+
+  session.active = true;
+  updateDraggedThumbPosition(session, clientX);
+  updateThumbPlaceholder(session, clientX);
+  startThumbAutoScroll(session);
+}
+
+function updateDraggedThumbPosition(session, clientX) {
+  const targetLeft = clientX - session.dragOffsetX;
+  const dx = targetLeft - session.baseLeft;
+  session.thumbEl.style.transform = `translate3d(${dx}px, 0, 0)`;
+}
+
+function updateThumbPlaceholder(session, clientX) {
+  const siblings = Array.from(els.thumbStrip.querySelectorAll(".thumb")).filter(
+    (el) => el !== session.thumbEl,
+  );
+
+  let insertBefore = null;
+  for (const sibling of siblings) {
+    const rect = sibling.getBoundingClientRect();
+    if (clientX < rect.left + rect.width / 2) {
+      insertBefore = sibling;
+      break;
+    }
+  }
+
+  if (insertBefore) {
+    els.thumbStrip.insertBefore(session.placeholderEl, insertBefore);
+  } else {
+    els.thumbStrip.appendChild(session.placeholderEl);
+  }
+}
+
+function startThumbAutoScroll(session) {
+  const loop = () => {
+    if (!session.active) return;
+    const stripRect = els.thumbStrip.getBoundingClientRect();
+    const edge = THUMB_REORDER.autoScrollEdgePx;
+
+    let velocity = 0;
+    // Edge-proximity speed ramp keeps auto-scroll controllable with long strips.
+    if (session.lastX < stripRect.left + edge) {
+      const closeness = (stripRect.left + edge - session.lastX) / edge;
+      velocity = -THUMB_REORDER.autoScrollMaxSpeed * clamp(closeness, 0, 1);
+    } else if (session.lastX > stripRect.right - edge) {
+      const closeness = (session.lastX - (stripRect.right - edge)) / edge;
+      velocity = THUMB_REORDER.autoScrollMaxSpeed * clamp(closeness, 0, 1);
+    }
+
+    if (velocity !== 0) {
+      const prev = els.thumbStrip.scrollLeft;
+      els.thumbStrip.scrollLeft += velocity;
+      if (els.thumbStrip.scrollLeft !== prev) {
+        updateThumbPlaceholder(session, session.lastX);
+      }
+    }
+
+    session.autoScrollRaf = requestAnimationFrame(loop);
+  };
+
+  session.autoScrollRaf = requestAnimationFrame(loop);
+}
+
+function finishThumbReorder(session, commit, pointerId) {
+  if (!session.active) return;
+  session.active = false;
+
+  if (session.autoScrollRaf) {
+    cancelAnimationFrame(session.autoScrollRaf);
+    session.autoScrollRaf = 0;
+  }
+
+  try {
+    session.thumbEl.releasePointerCapture(pointerId);
+  } catch {
+    // Pointer may already be released by browser.
+  }
+
+  if (session.placeholderEl?.isConnected) {
+    els.thumbStrip.insertBefore(session.thumbEl, session.placeholderEl);
+    session.placeholderEl.remove();
+  }
+
+  session.thumbEl.classList.remove("dragging-pointer");
+  session.thumbEl.style.width = "";
+  session.thumbEl.style.height = "";
+  session.thumbEl.style.left = "";
+  session.thumbEl.style.top = "";
+  session.thumbEl.style.transform = "";
+
+  document.body.classList.remove("thumb-reordering");
+  els.thumbStrip.classList.remove("reorder-active");
+
+  if (commit) {
+    syncStateOrderFromThumbDom();
+    session.thumbEl.dataset.suppressClick = "1";
+    requestAnimationFrame(() => {
+      session.thumbEl.dataset.suppressClick = "";
+    });
+  }
+}
+
+function syncStateOrderFromThumbDom() {
+  const order = Array.from(els.thumbStrip.querySelectorAll(".thumb")).map(
+    (el) => el.dataset.imageId,
+  );
+  if (!order.length || order.length !== state.images.length) return;
+
+  const activeId = state.images[state.activeIndex]?.id;
+  const map = new Map(state.images.map((img) => [img.id, img]));
+  state.images = order
+    .map((id) => map.get(id))
+    .filter(Boolean);
+  state.activeIndex = Math.max(
+    0,
+    state.images.findIndex((img) => img.id === activeId),
+  );
+
+  requestRender({ preview: true, thumbs: true, controls: false });
+}
+
+function isCoarsePointer() {
+  return window.matchMedia?.("(pointer: coarse)").matches ?? false;
 }
 
 function clearThumbDropTargets() {
